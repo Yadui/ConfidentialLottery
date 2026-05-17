@@ -1,120 +1,41 @@
 # Confidential Lottery
 
-Privacy-preserving lottery prototype for Midnight: private ticket numbers, public commitments, and winner claims backed by a ZK proof trail.
+Official hackathon submission for a privacy-preserving lottery workflow on Midnight.
 
-Confidential Lottery demonstrates a full judge-ready flow for running a lottery where players do not reveal their selected numbers unless they win. The public can audit commitments, draws, and accepted claims, while the private ticket number and nonce stay encrypted off-chain and private inside the proof witness.
+Confidential Lottery lets players enter a lottery without exposing their selected ticket number to the public. Each ticket becomes a public commitment, each draw is auditable, and only the winner reveals the proof needed to claim. The result is a lottery experience where public verification and participant privacy coexist in the same workflow.
 
-![Confidential Lottery buy ticket flow](media/screenshots/01-buy-ticket.png)
+![Confidential Lottery private ticket flow](media/screenshots/01-buy-ticket.png)
 
-## What It Does
+## Submission Summary
 
-- Lets a player buy a hidden-number ticket from `1` to `1000`.
-- Publishes only `ticket_id`, `lottery_id`, `commit_hash`, proof hash, ZK mode, and status.
-- Encrypts the ticket number, nonce, and nickname in the FastAPI backend before SQLite persistence.
-- Runs a separate Node service for Midnight's Node-only proof tooling.
-- Uses a Compact contract with `buy_ticket` and `reveal_winner` circuits.
-- Shows proof transparency in the UI: real vs mock mode, contract compilation, network, deployment, and SRS parameter status.
-- Includes judge demo controls that reset and seed a deterministic winning round.
-- Provides a public audit timeline for ticket commitments, draw reveals, and winner proof acceptance.
+Confidential Lottery demonstrates a practical use case for Midnight's privacy and ZK capabilities: a lottery desk where hidden inputs remain private while outcomes stay publicly verifiable.
 
-## Screenshots
+The application includes three core flows:
 
-### Live Draw And Audit Trail
+- Private ticket purchase: the player chooses a number from `1` to `1000`, and the app publishes only a commitment.
+- Public draw board: commitments, draw state, and audit events are visible without exposing ticket numbers.
+- Winner proof: the winner proves that their hidden number matches the drawn number.
+
+## Event Screens
+
+### Public Draw And Audit Trail
 
 ![Live draw and public audit timeline](media/screenshots/02-live-draw.png)
 
-### Winner Proof
+### Winner Proof Result
 
 ![Winner proof result](media/screenshots/03-winner-proof.png)
 
-## Why Midnight
+## Midnight Integration
 
-Lottery systems need public confidence without exposing every participant's private pick. Midnight's Compact language and ZK tooling are a natural fit for this shape of workflow:
+The Compact contract models the lottery with a small public ledger and private witness inputs.
 
-| Workflow step | Public output | Private witness |
+| Circuit | Public result | Private witness |
 | --- | --- | --- |
-| Buy ticket | Ticket ID, lottery ID, commitment hash, pending winner status | Ticket number, nonce |
-| Reveal winner | Winner ticket ID, winner status, proof hash | Drawn number, ticket number, nonce |
+| `buy_ticket` | Ticket ID, lottery ID, commitment hash, pending winner status | Ticket number, nonce |
+| `reveal_winner` | Winner ticket ID, winner status | Drawn number, ticket number, nonce |
 
-The current prototype can run real local proof generation when the Compact build artifacts and SRS params are available. When the local environment cannot prove, the app falls back to mock mode and makes that explicit in the UI.
-
-## Architecture
-
-```mermaid
-flowchart LR
-  Player[Player / Judge] --> Frontend[React + Vite frontend]
-  Frontend --> Backend[FastAPI backend]
-  Frontend --> MidnightService[Node Midnight proof service]
-  Backend --> SQLite[(SQLite encrypted ticket state)]
-  MidnightService --> Compact[Compiled Compact contract]
-  MidnightService --> ZKIR[zkir-v2 + SRS params]
-  Compact --> Circuits[buy_ticket / reveal_winner]
-```
-
-## Tech Stack
-
-- Frontend: React, Vite, Tailwind CSS, lucide-react
-- Backend: FastAPI, SQLite, Fernet encryption
-- Midnight bridge: Node.js, Express, Compact runtime, Midnight ledger WASM, `zkir-v2`
-- Contract: Compact source at `contract/src/lottery.compact`
-- Demo/runtime ports: frontend `3006`, backend `8006`, Midnight service `3007`
-
-## Quick Start
-
-### Prerequisites
-
-- Node.js 20+
-- Python 3.10+
-- npm
-- Optional for real local proofs: Midnight Compact CLI and reachable/cached SRS params
-
-### Install
-
-```sh
-npm run install:all
-```
-
-### Run The App
-
-```sh
-npm start
-```
-
-Then open:
-
-```text
-http://localhost:3006
-```
-
-The startup script launches all three services:
-
-- Frontend: `http://localhost:3006`
-- Backend API: `http://localhost:8006`
-- Midnight proof service: `http://localhost:3007`
-
-If the Compact CLI is available, `start.sh` compiles `contract/src/lottery.compact` into `contract/dist/lottery`. If not, the app still runs in explicit mock fallback mode.
-
-## Judge Demo Flow
-
-1. Run `npm start`.
-2. Open `http://localhost:3006`.
-3. Click `Reset demo`.
-4. Click `Seed tickets`.
-5. Open `Live Draw` to inspect commitments, revealed draw `905`, and the public audit timeline.
-6. Open `Winner Proof` and submit the prefilled claim.
-
-Seeded winning values:
-
-```text
-Ticket ID: demo-midnight-hackathon-2026-charlie
-Ticket number: 905
-Nonce: 900100905
-Drawn number: 905
-```
-
-## Contract Model
-
-The Compact contract keeps the public ledger intentionally small:
+Public ledger fields:
 
 ```compact
 export ledger ticket_id:   Opaque<"string">;
@@ -123,49 +44,65 @@ export ledger commit_hash: Opaque<"string">;
 export ledger is_winner:   Uint<32>;
 ```
 
-Implemented circuits:
+The proof bridge loads the compiled Compact contract, Compact runtime, Midnight ledger WASM module, and `zkir-v2` proof tooling. When local prover material and SRS params are available, the app runs the real local proof path. If the proof environment is unavailable, the UI clearly reports mock fallback mode instead of hiding it.
 
-- `buy_ticket`: proves the private ticket number is within `1..1000`, then discloses ticket ID, lottery ID, commitment hash, and pending winner status.
-- `reveal_winner`: proves `drawn_number == ticket_number`, then discloses the winner ticket ID and winner status.
+## Product Experience
 
-## Environment
+- Hidden-number ticket minting with receipt export.
+- Public commitment board for auditability.
+- Proof transparency panel showing ZK mode, contract compilation, network, deployment, and SRS status.
+- Encrypted backend storage for ticket number, nonce, and optional nickname.
+- Winner claim flow that verifies private ticket data against the commitment and current draw.
+- Evaluation mode with deterministic seeding for a reliable end-to-end event review.
 
-Defaults are already set for local demo mode. See `.env.example` for configurable values:
+## Architecture
 
-```text
-VITE_MIDNIGHT_SERVICE_URL=http://localhost:3007
-VITE_API_BASE_URL=
-VITE_LOTTERY_ID=midnight-hackathon-2026
-LOTTERY_ID=midnight-hackathon-2026
-CORS_ORIGINS=http://localhost:3006,http://127.0.0.1:3006,http://localhost:5173,http://127.0.0.1:5173
-PORT=3007
-MIDNIGHT_ENV=preview
-PROOF_SERVER_URL=http://localhost:6301
-CONTRACT_ADDRESS=
+```mermaid
+flowchart LR
+  User[Player / Evaluator] --> Frontend[React + Vite]
+  Frontend --> Backend[FastAPI]
+  Frontend --> ProofService[Node Midnight proof service]
+  Backend --> Storage[(SQLite + Fernet encryption)]
+  ProofService --> Contract[Compiled Compact contract]
+  ProofService --> Prover[zkir-v2 + SRS params]
 ```
 
-The backend generates and stores `LOTTERY_ENCRYPTION_KEY` in `backend/.env` on first run if one is not provided. Local env files, SQLite databases, virtualenvs, node modules, build outputs, and generated contract artifacts are ignored by Git.
+## Technical Build
 
-## Honest Prototype Status
+- Frontend: React, Vite, Tailwind CSS, lucide-react
+- Backend: FastAPI, SQLite, Fernet encryption
+- Proof service: Node.js, Express, Compact runtime, Midnight ledger WASM, `zkir-v2`
+- Contract: Compact source in `contract/src/lottery.compact`
+- Network target: Midnight `preview`
 
-- Local proof generation is supported through the Midnight service when compiled artifacts and SRS params are available.
-- The demo has not been deployed to a live Midnight contract by default. Set `CONTRACT_ADDRESS` or provide `contract/deployed-address.json` after deployment.
-- Live draws currently use Python's `secrets` module. The seeded demo pins draw `905` for reliable judging.
-- A production draw should use a verifiable randomness source such as an oracle, VRF, or Midnight-compatible draw input.
-- Non-winning tickets never need to reveal their selected numbers in the app flow.
+## Evaluation
 
-## Project Structure
+The local evaluation build runs the frontend, backend, and Midnight proof service together:
 
-```text
-backend/            FastAPI API, encrypted ticket storage, draws, claims
-contract/src/       Compact lottery contract
-frontend/           React/Vite user interface
-midnight-service/   Node bridge for Midnight proof tooling
-media/screenshots/  README screenshots
-media/thumbnails/   Submission thumbnail assets
-DEMO_SCRIPT.md      4-6 minute and 90-second recording scripts
+```sh
+npm run install:all
+npm start
 ```
 
-## Demo Script
+Open the app at:
 
-For a polished submission video, use `DEMO_SCRIPT.md`. It includes the long-form judge walkthrough, a 90-second version, known seed values, and technical talking points.
+```text
+http://localhost:3006
+```
+
+For a deterministic end-to-end review, the app can seed a round with four committed tickets and a revealed winning draw of `905`. The seeded winner claim proves the relation `drawn_number == ticket_number` and records the accepted winner proof in the public audit timeline.
+
+## Prototype Transparency
+
+- Local proof generation is supported when Compact artifacts and SRS params are available.
+- The default repository state is not a live deployed Midnight contract; deployment can be connected with `CONTRACT_ADDRESS` or `contract/deployed-address.json`.
+- Live draws currently use backend cryptographic randomness through Python's `secrets` module.
+- Production randomness should be replaced with a verifiable source such as an oracle, VRF, or Midnight-compatible draw input.
+- Non-winning tickets do not reveal their selected numbers during the claim flow.
+
+## Next Steps
+
+- Deploy the Compact contract to a Midnight environment.
+- Replace local draw randomness with verifiable randomness.
+- Add wallet-connected identities and on-chain settlement.
+- Expand the audit panel with deployed transaction references.
