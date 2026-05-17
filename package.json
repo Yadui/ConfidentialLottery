@@ -1,0 +1,19 @@
+{
+  "name": "confidential-lottery",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "bash start.sh",
+    "dev": "bash start.sh",
+    "compile:contract": "compact compile contract/src/lottery.compact contract/dist/lottery",
+    "compile:contract:fast": "compact compile --skip-zk contract/src/lottery.compact contract/dist/lottery",
+    "install:all": "npm install && npm install --prefix midnight-service && npm install --prefix frontend && python3 -m venv backend/.venv && backend/.venv/bin/pip install -r backend/requirements.txt",
+    "backend": "cd backend && uvicorn main:app --reload --port 8006",
+    "midnight-service": "cd midnight-service && npm start",
+    "frontend": "cd frontend && npm run dev"
+  },
+  "dependencies": {
+    "@midnight-ntwrk/compact-runtime": "^0.15.0"
+  }
+}

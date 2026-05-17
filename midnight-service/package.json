@@ -1,0 +1,22 @@
+{
+  "name": "confidential-lottery-midnight-service",
+  "version": "1.0.0",
+  "description": "Midnight Network ZK bridge for Confidential Lottery",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "@midnight-ntwrk/compact-runtime": "^0.15.0",
+    "@midnight-ntwrk/ledger-v8": "^8.0.3",
+    "@midnight-ntwrk/midnight-js-contracts": "^4.0.2",
+    "@midnight-ntwrk/midnight-js-network-id": "^4.0.2",
+    "@midnight-ntwrk/midnight-js-types": "^4.0.2",
+    "@midnight-ntwrk/zkir-v2": "^2.1.0",
+    "cors": "^2.8.6",
+    "express": "^5.2.1"
+  }
+}

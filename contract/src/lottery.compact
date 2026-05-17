@@ -1,0 +1,35 @@
+pragma language_version >= 0.22;
+
+// PUBLIC (on-chain, visible to everyone)
+export ledger ticket_id:     Opaque<"string">;  // UUID
+export ledger lottery_id:    Opaque<"string">;  // which lottery round
+export ledger commit_hash:   Opaque<"string">;  // SHA-256(ticket_number || nonce)
+export ledger is_winner:     Uint<32>;           // 0=pending, 1=winner
+
+// buy_ticket: proves ticket is valid (1-1000) without revealing the number
+export circuit buy_ticket(
+  tid:           Opaque<"string">,
+  lid:           Opaque<"string">,
+  commit:        Opaque<"string">,
+  ticket_number: Uint<64>,    // PRIVATE - player's pick
+  nonce:         Uint<64>     // PRIVATE - binding randomness
+): [] {
+  assert(ticket_number > 0,    "ticket number must be > 0");
+  assert(ticket_number <= 1000, "ticket number must be <= 1000");
+  ticket_id   = disclose(tid);
+  lottery_id  = disclose(lid);
+  commit_hash = disclose(commit);
+  is_winner   = disclose(0);
+}
+
+// reveal_winner: proves the winner's ticket matches the drawn number
+export circuit reveal_winner(
+  tid:           Opaque<"string">,
+  drawn_number:  Uint<64>,    // PRIVATE - the draw result
+  ticket_number: Uint<64>,    // PRIVATE - winner's original pick
+  nonce:         Uint<64>     // PRIVATE - original nonce
+): [] {
+  assert(drawn_number == ticket_number, "ticket does not match draw");
+  ticket_id = disclose(tid);
+  is_winner = disclose(1);
+}

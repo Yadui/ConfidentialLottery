@@ -1,0 +1,13 @@
+node_modules/
+frontend/node_modules/
+frontend/dist/
+midnight-service/node_modules/
+backend/.venv/
+backend/.env
+backend/lottery.db
+backend/__pycache__/
+*.pyc
+midnight-service/.env
+frontend/.env
+contract/dist/
+.DS_Store
