@@ -3,7 +3,9 @@ import { useState } from 'react'
 import { buyTicketProof, generateNonce } from '../midnight/api'
 import { API_BASE, DEFAULT_LOTTERY_ID } from '../midnight/config'
 
-function BuyTicketView({ onTicketCreated }) {
+function BuyTicketView({ lotteryId, roundStatus, onTicketCreated }) {
+  const activeLotteryId = lotteryId ?? DEFAULT_LOTTERY_ID
+  const isClosed = roundStatus && roundStatus !== 'open'
   const [ticketNumber, setTicketNumber] = useState('')
   const [nickname, setNickname] = useState('')
   const [loading, setLoading] = useState(false)
@@ -12,7 +14,7 @@ function BuyTicketView({ onTicketCreated }) {
   const [error, setError] = useState('')
 
   const parsedTicket = Number(ticketNumber)
-  const canSubmit = Number.isInteger(parsedTicket) && parsedTicket >= 1 && parsedTicket <= 1000 && !loading
+  const canSubmit = Number.isInteger(parsedTicket) && parsedTicket >= 1 && parsedTicket <= 1000 && !loading && !isClosed
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -29,7 +31,7 @@ function BuyTicketView({ onTicketCreated }) {
     try {
       const proof = await buyTicketProof(null, {
         ticket_id: ticketId,
-        lottery_id: DEFAULT_LOTTERY_ID,
+        lottery_id: activeLotteryId,
         ticket_number: parsedTicket,
         nonce,
       })
@@ -39,7 +41,7 @@ function BuyTicketView({ onTicketCreated }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ticket_id: ticketId,
-          lottery_id: DEFAULT_LOTTERY_ID,
+          lottery_id: activeLotteryId,
           ticket_number: parsedTicket,
           nonce,
           nickname: nickname.trim() || null,
@@ -98,6 +100,12 @@ function BuyTicketView({ onTicketCreated }) {
           <p className="section-copy">
             Pick a number from 1 to 1000. The commitment is public; the number and nonce stay encrypted off-chain and private in the circuit witness.
           </p>
+
+          {isClosed ? (
+            <div className="alert-card alert-error" style={{ marginBottom: '16px' }}>
+              Ticket sales are closed — this round is <strong>{roundStatus}</strong>.
+            </div>
+          ) : null}
 
           <form className="form-stack" onSubmit={handleSubmit}>
             <label className="field-label">

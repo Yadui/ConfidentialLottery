@@ -1,5 +1,6 @@
 import hashlib
 import os
+import re
 import secrets
 import sqlite3
 import uuid
@@ -103,8 +104,27 @@ def _db_init() -> None:
                 is_winner         INTEGER NOT NULL,
                 claimed_at        TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS rounds (
+                lottery_id   TEXT PRIMARY KEY,
+                name         TEXT NOT NULL,
+                ticket_min   INTEGER NOT NULL DEFAULT 1,
+                ticket_max   INTEGER NOT NULL DEFAULT 1000,
+                status       TEXT NOT NULL DEFAULT 'open',
+                created_at   TEXT NOT NULL,
+                locked_at    TEXT,
+                archived_at  TEXT
+            );
             """
         )
+    with sqlite3.connect(DB_FILE) as conn:
+        if not conn.execute(
+            "SELECT 1 FROM rounds WHERE lottery_id = ?", (DEFAULT_LOTTERY_ID,)
+        ).fetchone():
+            conn.execute(
+                "INSERT INTO rounds (lottery_id, name, ticket_min, ticket_max, status, created_at) VALUES (?,?,?,?,?,?)",
+                (DEFAULT_LOTTERY_ID, "Hackathon 2026", 1, 1000, "open", _now_iso()),
+            )
 
 
 def _row_to_public_ticket(row: sqlite3.Row) -> dict:
@@ -151,6 +171,20 @@ def _ticket_count(lottery_id: str) -> int:
         ).fetchone()[0]
 
 
+def _get_round(lottery_id: str) -> Optional[sqlite3.Row]:
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.row_factory = sqlite3.Row
+        return conn.execute(
+            "SELECT * FROM rounds WHERE lottery_id = ?",
+            (lottery_id,),
+        ).fetchone()
+
+
+def _slugify(name: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:40]
+    return f"{slug}-{secrets.token_hex(3)}" if slug else f"round-{secrets.token_hex(4)}"
+
+
 _db_init()
 
 
@@ -178,6 +212,13 @@ class ClaimRequest(BaseModel):
     is_winner: int = Field(ge=0, le=1)
     drawn_number: Optional[int] = Field(default=None, gt=0, le=1000)
     zk_mode: Optional[str] = "mock"
+
+
+class RoundCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    lottery_id: Optional[str] = Field(default=None, min_length=1, max_length=80)
+    ticket_min: int = Field(default=1, ge=1, le=1000)
+    ticket_max: int = Field(default=1000, ge=1, le=1000)
 
 
 class DemoRequest(BaseModel):
@@ -247,6 +288,11 @@ async def health():
 @app.post("/api/demo/reset")
 async def reset_demo(demo: DemoRequest):
     deleted = _reset_lottery(demo.lottery_id)
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute(
+            "UPDATE rounds SET status = 'open', locked_at = NULL WHERE lottery_id = ? AND status != 'archived'",
+            (demo.lottery_id,),
+        )
     return {
         "status": "reset",
         "lottery_id": demo.lottery_id,
@@ -313,6 +359,10 @@ async def seed_demo(demo: DemoRequest):
                 "revealed",
                 draw_created_at,
             ),
+        )
+        conn.execute(
+            "UPDATE rounds SET status = 'revealed' WHERE lottery_id = ? AND status IN ('open', 'locked')",
+            (demo.lottery_id,),
         )
 
     return {
@@ -412,6 +462,12 @@ async def audit_timeline(lottery_id: Optional[str] = None):
 
 @app.post("/api/tickets")
 async def submit_ticket(ticket: TicketRequest):
+    round_row = _get_round(ticket.lottery_id)
+    if round_row and round_row["status"] != "open":
+        raise HTTPException(
+            status_code=409,
+            detail=f"round '{ticket.lottery_id}' is {round_row['status']} — ticket sales are closed",
+        )
     ticket_id = ticket.ticket_id or str(uuid.uuid4())
     commit_hash = _ticket_commit_hash(ticket.ticket_number, ticket.nonce)
     if ticket.commit_hash and ticket.commit_hash != commit_hash:
@@ -474,6 +530,18 @@ async def list_tickets(lottery_id: Optional[str] = None):
 
 @app.post("/api/draw")
 async def run_draw(draw: DrawRequest):
+    if _ticket_count(draw.lottery_id) == 0:
+        raise HTTPException(
+            status_code=409,
+            detail="no tickets in this round — buy at least one ticket before drawing",
+        )
+    round_row = _get_round(draw.lottery_id)
+    if round_row and round_row["status"] in ("revealed", "claimed", "archived"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"round is already {round_row['status']}",
+        )
+
     drawn_number = draw.drawn_number or (secrets.randbelow(1000) + 1)
     draw_id = str(uuid.uuid4())
     created_at = _now_iso()
@@ -485,6 +553,10 @@ async def run_draw(draw: DrawRequest):
             VALUES (?,?,?,?,?)
             """,
             (draw_id, draw.lottery_id, _enc(str(drawn_number)), "revealed", created_at),
+        )
+        conn.execute(
+            "UPDATE rounds SET status = 'revealed' WHERE lottery_id = ? AND status IN ('open', 'locked')",
+            (draw.lottery_id,),
         )
 
     return {
@@ -572,6 +644,10 @@ async def submit_claim(claim: ClaimRequest):
             "UPDATE tickets SET status = 'winner' WHERE ticket_id = ?",
             (claim.ticket_id,),
         )
+        conn.execute(
+            "UPDATE rounds SET status = 'claimed' WHERE lottery_id = ? AND status = 'revealed'",
+            (ticket["lottery_id"],),
+        )
 
     return {
         "claim_id": claim_id,
@@ -609,3 +685,128 @@ async def claim_result(lottery_id: Optional[str] = None):
         "zk_mode": row["zk_mode"],
         "claimed_at": row["claimed_at"],
     }
+
+
+# ---------------------------------------------------------------------------
+# Round management endpoints
+# ---------------------------------------------------------------------------
+
+
+def _row_to_round(row: sqlite3.Row, tickets_sold: int = 0, winner: Optional[dict] = None) -> dict:
+    return {
+        "lottery_id": row["lottery_id"],
+        "name": row["name"],
+        "ticket_min": row["ticket_min"],
+        "ticket_max": row["ticket_max"],
+        "status": row["status"],
+        "created_at": row["created_at"],
+        "locked_at": row["locked_at"],
+        "archived_at": row["archived_at"],
+        "tickets_sold": tickets_sold,
+        "winner": winner,
+    }
+
+
+def _round_winner(lottery_id: str) -> Optional[dict]:
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT ticket_id, proof_hash, claimed_at FROM claims WHERE lottery_id = ? AND is_winner = 1 ORDER BY claimed_at DESC LIMIT 1",
+            (lottery_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+@app.get("/api/rounds")
+async def list_rounds():
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("SELECT * FROM rounds ORDER BY created_at DESC").fetchall()
+    return {
+        "rounds": [
+            _row_to_round(row, _ticket_count(row["lottery_id"]), _round_winner(row["lottery_id"]))
+            for row in rows
+        ]
+    }
+
+
+@app.post("/api/rounds")
+async def create_round(req: RoundCreateRequest):
+    if req.ticket_min > req.ticket_max:
+        raise HTTPException(status_code=422, detail="ticket_min must be <= ticket_max")
+    lottery_id = req.lottery_id or _slugify(req.name)
+    created_at = _now_iso()
+    with sqlite3.connect(DB_FILE) as conn:
+        try:
+            conn.execute(
+                "INSERT INTO rounds (lottery_id, name, ticket_min, ticket_max, status, created_at) VALUES (?,?,?,?,?,?)",
+                (lottery_id, req.name, req.ticket_min, req.ticket_max, "open", created_at),
+            )
+        except sqlite3.IntegrityError:
+            raise HTTPException(status_code=409, detail=f"round '{lottery_id}' already exists")
+    return {
+        "lottery_id": lottery_id,
+        "name": req.name,
+        "ticket_min": req.ticket_min,
+        "ticket_max": req.ticket_max,
+        "status": "open",
+        "created_at": created_at,
+        "tickets_sold": 0,
+        "winner": None,
+    }
+
+
+@app.get("/api/rounds/current")
+async def current_round():
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM rounds WHERE status != 'archived' ORDER BY created_at DESC LIMIT 1"
+        ).fetchone()
+    if not row:
+        return {
+            "lottery_id": DEFAULT_LOTTERY_ID,
+            "name": "Default",
+            "ticket_min": 1,
+            "ticket_max": 1000,
+            "status": "open",
+            "created_at": None,
+            "locked_at": None,
+            "archived_at": None,
+            "tickets_sold": _ticket_count(DEFAULT_LOTTERY_ID),
+            "winner": None,
+        }
+    return _row_to_round(row, _ticket_count(row["lottery_id"]), _round_winner(row["lottery_id"]))
+
+
+@app.post("/api/rounds/{lottery_id}/lock")
+async def lock_round(lottery_id: str):
+    round_row = _get_round(lottery_id)
+    if not round_row:
+        raise HTTPException(status_code=404, detail=f"round '{lottery_id}' not found")
+    if round_row["status"] != "open":
+        raise HTTPException(status_code=409, detail=f"round is already {round_row['status']}")
+    locked_at = _now_iso()
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute(
+            "UPDATE rounds SET status = 'locked', locked_at = ? WHERE lottery_id = ?",
+            (locked_at, lottery_id),
+        )
+    return {"lottery_id": lottery_id, "status": "locked", "locked_at": locked_at}
+
+
+@app.post("/api/rounds/{lottery_id}/archive")
+async def archive_round(lottery_id: str):
+    round_row = _get_round(lottery_id)
+    if not round_row:
+        raise HTTPException(status_code=404, detail=f"round '{lottery_id}' not found")
+    if round_row["status"] == "archived":
+        raise HTTPException(status_code=409, detail="round is already archived")
+    archived_at = _now_iso()
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute(
+            "UPDATE rounds SET status = 'archived', archived_at = ? WHERE lottery_id = ?",
+            (archived_at, lottery_id),
+        )
+    return {"lottery_id": lottery_id, "status": "archived", "archived_at": archived_at}
+

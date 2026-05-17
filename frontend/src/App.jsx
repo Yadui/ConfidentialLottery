@@ -6,8 +6,10 @@ import DemoControls from './components/DemoControls'
 import GuidedTutorial from './components/GuidedTutorial'
 import LiveDrawView from './components/LiveDrawView'
 import ProofTransparencyPanel from './components/ProofTransparencyPanel'
+import RoundManager from './components/RoundManager'
 import WinnerProofView from './components/WinnerProofView'
-import { checkMidnightService } from './midnight/api'
+import { checkMidnightService, getCurrentRound } from './midnight/api'
+import { API_BASE, DEFAULT_LOTTERY_ID } from './midnight/config'
 
 const TUTORIAL_STORAGE_KEY = 'confidential-lottery:tutorial-seen'
 
@@ -18,6 +20,8 @@ function App() {
   const [midnightStatus, setMidnightStatus] = useState({ serviceUp: false, zkMode: 'mock' })
   const [tutorialOpen, setTutorialOpen] = useState(false)
   const [appGuideOpen, setAppGuideOpen] = useState(false)
+  const [selectedRoundId, setSelectedRoundId] = useState(DEFAULT_LOTTERY_ID)
+  const [selectedRound, setSelectedRound] = useState(null)
 
   const refreshMidnightStatus = () => {
     let active = true
@@ -29,9 +33,28 @@ function App() {
     }
   }
 
+  const refreshSelectedRound = () => {
+    getCurrentRound().then((round) => {
+      setSelectedRound(round)
+      setSelectedRoundId(round.lottery_id)
+    }).catch(() => {})
+  }
+
   useEffect(() => {
     return refreshMidnightStatus()
   }, [])
+
+  useEffect(() => {
+    refreshSelectedRound()
+  }, [])
+
+  useEffect(() => {
+    if (!selectedRoundId) return
+    fetch(`${API_BASE}/api/rounds`).then(r => r.json()).then(data => {
+      const found = (data.rounds ?? []).find(r => r.lottery_id === selectedRoundId)
+      if (found) setSelectedRound(found)
+    }).catch(() => {})
+  }, [selectedRoundId])
 
   useEffect(() => {
     try {
@@ -45,11 +68,20 @@ function App() {
 
   const refreshPublicState = () => setRefreshKey((key) => key + 1)
 
+  const refreshRoundData = () => {
+    if (!selectedRoundId) return
+    fetch(`${API_BASE}/api/rounds`).then(r => r.json()).then(data => {
+      const found = (data.rounds ?? []).find(r => r.lottery_id === selectedRoundId)
+      if (found) setSelectedRound(found)
+    }).catch(() => {})
+  }
+
   const handleDemoReset = () => {
     setLastTicket(null)
     setCurrentTab('buy')
     refreshPublicState()
     refreshMidnightStatus()
+    refreshRoundData()
   }
 
   const handleDemoSeeded = (result) => {
@@ -57,6 +89,14 @@ function App() {
     setCurrentTab('proof')
     refreshPublicState()
     refreshMidnightStatus()
+    refreshRoundData()
+  }
+
+  const handleRoundSelect = (lotteryId) => {
+    setSelectedRoundId(lotteryId)
+    setLastTicket(null)
+    setCurrentTab('buy')
+    refreshPublicState()
   }
 
   const closeTutorial = () => {
@@ -135,26 +175,49 @@ function App() {
         </section>
 
         <div className="workspace-shell">
+          <RoundManager
+            selectedRoundId={selectedRoundId}
+            onRoundSelect={handleRoundSelect}
+            onRoundChange={refreshRoundData}
+          />
+
           <div className="hackathon-grid">
-            <DemoControls onReset={handleDemoReset} onSeeded={handleDemoSeeded} />
+            <DemoControls
+              lotteryId={selectedRoundId}
+              onReset={handleDemoReset}
+              onSeeded={handleDemoSeeded}
+            />
             <ProofTransparencyPanel midnightStatus={midnightStatus} />
           </div>
 
           <div className={currentTab === 'buy' ? '' : 'hidden'}>
             <BuyTicketView
+              lotteryId={selectedRoundId}
+              roundStatus={selectedRound?.status ?? 'open'}
               onTicketCreated={(ticket) => {
                 setLastTicket(ticket)
                 refreshPublicState()
+                refreshRoundData()
               }}
             />
           </div>
 
           <div className={currentTab === 'draw' ? '' : 'hidden'}>
-            <LiveDrawView refreshKey={refreshKey} onDrawComplete={refreshPublicState} />
+            <LiveDrawView
+              lotteryId={selectedRoundId}
+              roundStatus={selectedRound?.status ?? 'open'}
+              refreshKey={refreshKey}
+              onDrawComplete={() => { refreshPublicState(); refreshRoundData() }}
+            />
           </div>
 
           <div className={currentTab === 'proof' ? '' : 'hidden'}>
-            <WinnerProofView lastTicket={lastTicket} refreshKey={refreshKey} onClaimCreated={refreshPublicState} />
+            <WinnerProofView
+              lotteryId={selectedRoundId}
+              lastTicket={lastTicket}
+              refreshKey={refreshKey}
+              onClaimCreated={() => { refreshPublicState(); refreshRoundData() }}
+            />
           </div>
         </div>
       </main>

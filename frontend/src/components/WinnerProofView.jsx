@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react'
 import { revealWinnerProof } from '../midnight/api'
 import { API_BASE, DEFAULT_LOTTERY_ID } from '../midnight/config'
 
-function WinnerProofView({ lastTicket, refreshKey, onClaimCreated }) {
+function WinnerProofView({ lotteryId, lastTicket, refreshKey, onClaimCreated }) {
+  const activeLotteryId = lotteryId ?? DEFAULT_LOTTERY_ID
   const [ticketId, setTicketId] = useState('')
   const [ticketNumber, setTicketNumber] = useState('')
   const [nonce, setNonce] = useState('')
@@ -23,7 +24,7 @@ function WinnerProofView({ lastTicket, refreshKey, onClaimCreated }) {
   async function loadDraw() {
     setDrawLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/api/draw/current?lottery_id=${encodeURIComponent(DEFAULT_LOTTERY_ID)}`)
+      const res = await fetch(`${API_BASE}/api/draw/current?lottery_id=${encodeURIComponent(activeLotteryId)}`)
       if (!res.ok) throw new Error('Unable to load current draw')
       setDraw(await res.json())
     } catch (err) {
@@ -35,7 +36,7 @@ function WinnerProofView({ lastTicket, refreshKey, onClaimCreated }) {
 
   useEffect(() => {
     loadDraw()
-  }, [refreshKey])
+  }, [refreshKey, activeLotteryId])
 
   async function handleClaim(event) {
     event.preventDefault()

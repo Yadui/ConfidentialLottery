@@ -141,3 +141,62 @@ async function sha256(text) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
   return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('')
 }
+
+// ---------------------------------------------------------------------------
+// Round management API
+// ---------------------------------------------------------------------------
+
+export async function getRounds() {
+  const res = await fetch(`${API_BASE}/api/rounds`)
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(body.detail ?? 'Unable to load rounds')
+  }
+  return res.json()
+}
+
+export async function getCurrentRound() {
+  const res = await fetch(`${API_BASE}/api/rounds/current`)
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(body.detail ?? 'Unable to load current round')
+  }
+  return res.json()
+}
+
+export async function createRound(data) {
+  const res = await fetch(`${API_BASE}/api/rounds`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(body.detail ?? 'Unable to create round')
+  }
+  return res.json()
+}
+
+export async function lockRound(lotteryId) {
+  const res = await fetch(`${API_BASE}/api/rounds/${encodeURIComponent(lotteryId)}/lock`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(body.detail ?? 'Unable to lock round')
+  }
+  return res.json()
+}
+
+export async function archiveRound(lotteryId) {
+  const res = await fetch(`${API_BASE}/api/rounds/${encodeURIComponent(lotteryId)}/archive`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(body.detail ?? 'Unable to archive round')
+  }
+  return res.json()
+}

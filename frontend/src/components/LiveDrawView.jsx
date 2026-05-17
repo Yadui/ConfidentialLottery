@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react'
 import { getAuditTimeline } from '../midnight/api'
 import { API_BASE, DEFAULT_LOTTERY_ID } from '../midnight/config'
 
-function LiveDrawView({ refreshKey, onDrawComplete }) {
+function LiveDrawView({ lotteryId, roundStatus, refreshKey, onDrawComplete }) {
+  const activeLotteryId = lotteryId ?? DEFAULT_LOTTERY_ID
   const [tickets, setTickets] = useState([])
   const [draw, setDraw] = useState(null)
   const [claim, setClaim] = useState(null)
@@ -17,16 +18,16 @@ function LiveDrawView({ refreshKey, onDrawComplete }) {
     setError('')
     try {
       const [ticketsRes, drawRes, claimRes] = await Promise.all([
-        fetch(`${API_BASE}/api/tickets?lottery_id=${encodeURIComponent(DEFAULT_LOTTERY_ID)}`),
-        fetch(`${API_BASE}/api/draw/current?lottery_id=${encodeURIComponent(DEFAULT_LOTTERY_ID)}`),
-        fetch(`${API_BASE}/api/claim/result?lottery_id=${encodeURIComponent(DEFAULT_LOTTERY_ID)}`),
+        fetch(`${API_BASE}/api/tickets?lottery_id=${encodeURIComponent(activeLotteryId)}`),
+        fetch(`${API_BASE}/api/draw/current?lottery_id=${encodeURIComponent(activeLotteryId)}`),
+        fetch(`${API_BASE}/api/claim/result?lottery_id=${encodeURIComponent(activeLotteryId)}`),
       ])
       if (!ticketsRes.ok || !drawRes.ok || !claimRes.ok) throw new Error('Unable to load lottery state')
       const ticketsBody = await ticketsRes.json()
       setTickets(ticketsBody.tickets ?? [])
       setDraw(await drawRes.json())
       setClaim(await claimRes.json())
-      const timeline = await getAuditTimeline(DEFAULT_LOTTERY_ID)
+      const timeline = await getAuditTimeline(activeLotteryId)
       setEvents(timeline.events ?? [])
     } catch (err) {
       setError(err.message)
@@ -37,7 +38,7 @@ function LiveDrawView({ refreshKey, onDrawComplete }) {
 
   useEffect(() => {
     refresh()
-  }, [refreshKey])
+  }, [refreshKey, activeLotteryId])
 
   async function runDraw() {
     setDrawing(true)
@@ -46,7 +47,7 @@ function LiveDrawView({ refreshKey, onDrawComplete }) {
       const res = await fetch(`${API_BASE}/api/draw`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lottery_id: DEFAULT_LOTTERY_ID }),
+        body: JSON.stringify({ lottery_id: activeLotteryId }),
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({ detail: res.statusText }))
@@ -64,6 +65,12 @@ function LiveDrawView({ refreshKey, onDrawComplete }) {
   }
 
   const drawVisible = draw?.status === 'revealed' && draw.drawn_number
+  const canDraw = !drawing && tickets.length > 0 && !['revealed', 'claimed', 'archived'].includes(roundStatus)
+  const drawDisabledReason = tickets.length === 0
+    ? 'Buy at least one ticket before drawing'
+    : ['revealed', 'claimed', 'archived'].includes(roundStatus)
+      ? `Round is already ${roundStatus}`
+      : null
 
   return (
     <section className="module-section">
@@ -81,7 +88,13 @@ function LiveDrawView({ refreshKey, onDrawComplete }) {
             <RefreshCw className={loading ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} aria-hidden="true" />
             <span>Refresh</span>
           </button>
-          <button className="primary-button" type="button" onClick={runDraw} disabled={drawing}>
+          <button
+            className="primary-button"
+            type="button"
+            onClick={runDraw}
+            disabled={!canDraw}
+            title={drawDisabledReason ?? undefined}
+          >
             {drawing ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Shuffle className="h-4 w-4" aria-hidden="true" />}
             <span>{drawing ? 'Drawing' : 'Run Draw'}</span>
           </button>
@@ -101,7 +114,7 @@ function LiveDrawView({ refreshKey, onDrawComplete }) {
             <span>Current lottery</span>
           </div>
           <dl className="info-list">
-            <InfoRow label="Lottery ID" value={draw?.lottery_id ?? DEFAULT_LOTTERY_ID} />
+            <InfoRow label="Lottery ID" value={draw?.lottery_id ?? activeLotteryId} />
             <InfoRow label="Tickets sold" value={draw?.tickets_sold ?? tickets.length} />
             <InfoRow label="Draw status" value={draw?.status ?? 'pending'} />
             <InfoRow label="Drawn number" value={drawVisible ? draw.drawn_number : 'sealed'} highlight={Boolean(drawVisible)} />

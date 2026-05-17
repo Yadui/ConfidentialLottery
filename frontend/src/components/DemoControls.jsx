@@ -2,7 +2,7 @@ import { DatabaseZap, Loader2, RotateCcw } from 'lucide-react'
 import { useState } from 'react'
 import { resetDemo, seedDemo } from '../midnight/api'
 
-function DemoControls({ onReset, onSeeded }) {
+function DemoControls({ lotteryId, onReset, onSeeded }) {
   const [busyAction, setBusyAction] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -12,7 +12,7 @@ function DemoControls({ onReset, onSeeded }) {
     setMessage('')
     setError('')
     try {
-      const result = await resetDemo()
+      const result = await resetDemo(lotteryId)
       setMessage(`Cleared ${result.deleted.tickets} tickets, ${result.deleted.draws} draws, and ${result.deleted.claims} claims.`)
       onReset?.(result)
     } catch (err) {
@@ -27,7 +27,7 @@ function DemoControls({ onReset, onSeeded }) {
     setMessage('')
     setError('')
     try {
-      const result = await seedDemo()
+      const result = await seedDemo(lotteryId)
       setMessage(`Seeded ${result.tickets.length} tickets and revealed draw #${result.draw.drawn_number}.`)
       onSeeded?.(result)
     } catch (err) {
